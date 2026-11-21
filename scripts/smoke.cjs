@@ -475,6 +475,56 @@ app.whenReady()
 		);
 		ok('حساب جدید در ساختار حساب‌ها دیده می‌شود', (await text(win)).includes('هزینه آزمایشی'));
 
+		// ---- کارتخوان: بدون بانک متصل ساخته نمی‌شود و موجودی مستقل ندارد
+		const terminalsBefore = countOf('treasuries');
+		ok('تب کارتخوان باز می‌شود', (await openTab('کارتخوان')) === 'ok');
+		ok('کارتخوان بدون بانک متصل هشدار می‌دهد', (await text(win)).includes('کارتخوان موجودی مستقل ندارد'));
+		await clickButton('کارتخوان جدید');
+		await sleep(400);
+		await fill('#tr-name', 'کارتخوان بی‌بانک');
+		await sleep(150);
+		await clickButton('ذخیره');
+		await sleep(700);
+		ok('کارتخوان بدون بانک متصل ذخیره نمی‌شود', countOf('treasuries') === terminalsBefore);
+
+		ok('تب بانک باز می‌شود', (await openTab('بانک')) === 'ok');
+		await clickButton('حساب بانکی جدید');
+		await sleep(400);
+		await fill('#tr-name', 'بانک آزمایشی');
+		await fill('#tr-bank', 'سامان');
+		await sleep(150);
+		await clickButton('ذخیره');
+		await sleep(900);
+		const bankRow = db
+			.get()
+			.prepare("SELECT id FROM treasuries WHERE kind='bank' ORDER BY id DESC")
+			.get();
+		ok('حساب بانکی از رابط کاربری ساخته می‌شود', !!bankRow, String(countOf('treasuries')));
+
+		ok('تب کارتخوان باز می‌شود (پس از ساخت بانک)', (await openTab('کارتخوان')) === 'ok');
+		await clickButton('کارتخوان جدید');
+		await sleep(400);
+		await fill('#tr-name', 'کارتخوان آزمایشی');
+		await fill('#tr-term', 'P-TEST');
+		await sleep(150);
+		await clickButton('ذخیره');
+		await sleep(900);
+		const terminalRow = db
+			.get()
+			.prepare("SELECT account_id, settle_treasury_id FROM treasuries WHERE kind='terminal'")
+			.get();
+		ok(
+			'کارتخوان از رابط کاربری ساخته می‌شود',
+			!!terminalRow && countOf('treasuries') === terminalsBefore + 2,
+			`${terminalsBefore} → ${countOf('treasuries')}`
+		);
+		ok('کارتخوان به حساب بانکی متصل می‌شود', terminalRow?.settle_treasury_id === bankRow?.id);
+		ok('کارتخوان حساب دفتری نمی‌گیرد', terminalRow?.account_id === null);
+		const terminalHeaders = await win.webContents.executeJavaScript(`
+			(() => [...document.querySelectorAll('th')].map((th) => th.textContent.trim()))()
+		`);
+		ok('جدول کارتخوان ستون موجودی ندارد', !terminalHeaders.includes('موجودی'), terminalHeaders.join('|'));
+
 		const created = await win.webContents.executeJavaScript(`
 		window.hesab.call('users.create', { name: 'زهرا', role: 'cashier', password: '4321' })
 			.then((res) => (res.ok ? res.data.role : 'ERR: ' + res.error))

@@ -51,6 +51,10 @@
 	}
 
 	async function save() {
+		if (kind === 'terminal' && !form.settleTreasuryId) {
+			toast('ابتدا یک حساب بانکی بسازید؛ کارتخوان باید به بانک متصل باشد', 'err', 5000);
+			return;
+		}
 		saving = true;
 		try {
 			await api('treasuries.save', form);
@@ -92,8 +96,10 @@
 			<tr>
 				<th>نام</th>
 				{#if kind === 'bank'}<th>بانک</th><th>شماره حساب</th>{/if}
-				{#if kind === 'terminal'}<th>شماره پایانه</th><th>بانک متصل</th><th class="!text-left">کارمزد</th>{/if}
-				<th class="!text-left">موجودی</th>
+				{#if kind === 'terminal'}<th>شماره پایانه</th><th>بانک متصل</th><th class="!text-left">
+						کارمزد
+					</th>{/if}
+				{#if kind !== 'terminal'}<th class="!text-left">موجودی</th>{/if}
 				<th></th>
 			</tr>
 		</thead>
@@ -107,16 +113,26 @@
 					{/if}
 					{#if kind === 'terminal'}
 						<td class="mono-num text-[12px]">{faDigits(treasury.terminal_no) || '—'}</td>
-						<td class="text-[12px] text-muted">{treasury.settle_name || '—'}</td>
+						<td class="text-[12px] text-muted">{treasury.settle_name || 'متصل نشده'}</td>
 						<td class="!text-left num">{fmt(treasury.fee_percent, 2)}٪</td>
 					{/if}
-					<td class="!text-left num text-ink">{fmt(treasury.balance)}</td>
+					{#if kind !== 'terminal'}
+						<td class="!text-left num text-ink">{fmt(treasury.balance)}</td>
+					{/if}
 					<td class="!text-left">
 						<div class="flex items-center gap-1">
-							<button class="btn btn-soft btn-sm !px-2" onclick={() => openEdit(treasury)} aria-label="ویرایش">
+							<button
+								class="btn btn-soft btn-sm !px-2"
+								onclick={() => openEdit(treasury)}
+								aria-label="ویرایش"
+							>
 								<Icon name="edit" size={13} />
 							</button>
-							<button class="btn btn-soft btn-sm !px-2" onclick={() => remove(treasury)} aria-label="حذف">
+							<button
+								class="btn btn-soft btn-sm !px-2"
+								onclick={() => remove(treasury)}
+								aria-label="حذف"
+							>
 								<Icon name="trash" size={13} />
 							</button>
 						</div>
@@ -129,9 +145,14 @@
 	{#if !rows.length}
 		<p class="py-8 text-center text-[12px] text-muted2">موردی تعریف نشده است</p>
 	{/if}
+	{#if kind === 'terminal'}
+		<p class="border-t border-line bg-paper/60 px-4 py-2 text-[11px] leading-relaxed text-muted">
+			کارتخوان موجودی مستقل ندارد؛ هر فروشی که با آن انجام شود به حساب بانکی متصل واریز می‌شود.
+		</p>
+	{/if}
 </div>
 
-<Modal open={open} title={form.id ? 'ویرایش' : meta.add} onclose={() => (open = false)} size="sm">
+<Modal {open} title={form.id ? 'ویرایش' : meta.add} onclose={() => (open = false)} size="sm">
 	<div class="space-y-3">
 		<div>
 			<label class="label" for="tr-name">نام</label>
@@ -155,12 +176,19 @@
 				<input id="tr-term" class="input" bind:value={form.terminalNo} />
 			</div>
 			<div>
-				<label class="label" for="tr-settle">بانک متصل (واریز تسویه)</label>
-				<select id="tr-settle" class="input" bind:value={form.settleTreasuryId}>
-					{#each banks as bank (bank.id)}
-						<option value={bank.id}>{bank.name}</option>
-					{/each}
-				</select>
+				<label class="label" for="tr-settle">حساب بانکی متصل</label>
+				{#if banks.length}
+					<select id="tr-settle" class="input" bind:value={form.settleTreasuryId}>
+						{#each banks as bank (bank.id)}
+							<option value={bank.id}>{bank.name}</option>
+						{/each}
+					</select>
+					<p class="mt-1 text-[11px] text-muted2">مبالغ کارتخوان به همین حساب واریز می‌شود.</p>
+				{:else}
+					<p class="rounded-lg bg-paper px-3 py-2 text-[11.5px] text-neg">
+						ابتدا در بخش «حساب‌های بانکی» یک حساب بسازید؛ کارتخوان بدون بانک متصل قابل ثبت نیست.
+					</p>
+				{/if}
 			</div>
 			<div>
 				<label class="label" for="tr-fee">درصد کارمزد</label>

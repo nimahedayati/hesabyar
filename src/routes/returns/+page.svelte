@@ -27,7 +27,8 @@
 	const currency = $derived(session.settings?.currency || 'تومان');
 	const isSale = $derived(kind === 'sale_return');
 	const sourceType = $derived(isSale ? 'sale' : 'purchase');
-	const treasuries = $derived(session.treasuries || []);
+	// کارتخوان حساب مستقل ندارد؛ تسویه برگشت روی صندوق و بانک انجام می‌شود
+	const treasuries = $derived((session.treasuries || []).filter((t) => t.kind !== 'terminal'));
 	const returnTotal = $derived(
 		source
 			? source.lines.reduce((sum, line) => sum + (picks[line.id] || 0) * line.unit_price, 0)

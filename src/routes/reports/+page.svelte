@@ -236,7 +236,7 @@
 			<div class="card card-pad">
 				<h2 class="mb-3 text-[14px] font-bold text-ink">دارایی‌ها</h2>
 				<div class="num text-[24px] text-ink">{fmt(balance.assets)}</div>
-				<p class="mt-1 text-[11px] text-muted">صندوق، بانک، کارتخوان، انبار، طلب از مشتریان، چک‌های دریافتنی</p>
+				<p class="mt-1 text-[11px] text-muted">صندوق، بانک (شامل کارتخوان)، انبار، طلب از مشتریان، چک‌های دریافتنی</p>
 			</div>
 			<div class="card card-pad">
 				<h2 class="mb-3 text-[14px] font-bold text-ink">بدهی و سرمایه</h2>

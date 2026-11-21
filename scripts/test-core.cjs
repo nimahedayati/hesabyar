@@ -62,7 +62,26 @@ app.whenReady().then(() => {
 	}).id;
 	const supplierId = CAT.saveParty({ name: 'تأمین‌کننده تست', kind: 'supplier' }).id;
 	const customerId = CAT.saveParty({ name: 'مشتری تست', kind: 'customer' }).id;
-	const termId = CAT.saveTreasury({ kind: 'terminal', name: 'کارتخوان تست', terminalNo: 'P0001' }).id;
+	const bankId = CAT.saveTreasury({ kind: 'bank', name: 'بانک تست', bankName: 'سامان' }).id;
+	const termId = CAT.saveTreasury({
+		kind: 'terminal',
+		name: 'کارتخوان تست',
+		terminalNo: 'P0001',
+		settleTreasuryId: bankId
+	}).id;
+
+	// ---- کارتخوان بدون بانک متصل پذیرفته نمی‌شود
+	let orphanTerminal = false;
+	try {
+		CAT.saveTreasury({ kind: 'terminal', name: 'کارتخوان بی‌بانک' });
+	} catch (e) {
+		orphanTerminal = /بانک/.test(e.message);
+	}
+	ok('کارتخوان بدون حساب بانکی متصل ثبت نمی‌شود', orphanTerminal);
+	ok(
+		'کارتخوان حساب دفتری مستقل ندارد',
+		d.prepare('SELECT account_id FROM treasuries WHERE id=?').get(termId).account_id === null
+	);
 
 	DOC.createOpening({
 		date: DOC.today(),
@@ -119,6 +138,27 @@ app.whenReady().then(() => {
 		String(s.profit)
 	);
 	ok('سند فروش تراز است', balanced());
+
+	// ---- کارتخوان: موجودی روی حساب بانکی متصل می‌نشیند، نه حساب خودش
+	const bankAccountId = d.prepare('SELECT account_id FROM treasuries WHERE id=?').get(bankId).account_id;
+	const bankBalance = () =>
+		d
+			.prepare('SELECT COALESCE(SUM(debit-credit),0) v FROM journal_lines WHERE account_id=?')
+			.get(bankAccountId).v;
+	ok('فروش با کارتخوان موجودی بانک متصل را زیاد می‌کند', bankBalance() === 200000, String(bankBalance()));
+	ok('موجودی اعلامی کارتخوان صفر است', CAT.listTreasuries().find((t) => t.id === termId).balance === 0);
+	ok(
+		'کارتخوان بانک متصل را در فهرست نشان می‌دهد',
+		CAT.listTreasuries().find((t) => t.id === termId).settle_name === 'بانک تست'
+	);
+
+	let transferFromTerminal = false;
+	try {
+		DOC.createTransfer({ date: DOC.today(), fromTreasuryId: termId, toTreasuryId: cash, amount: 1000 });
+	} catch (e) {
+		transferFromTerminal = /کارتخوان/.test(e.message);
+	}
+	ok('انتقال وجه از کارتخوان مجاز نیست', transferFromTerminal);
 
 	const p1c = d.prepare('SELECT * FROM products WHERE id=?').get(p1.id);
 	ok('کاهش موجودی پس از فروش', p1c.stock_qty === 48, String(p1c.stock_qty));
@@ -442,6 +482,46 @@ app.whenReady().then(() => {
 	);
 	ok('حذف کسب‌وکار: نشست بسته می‌شود', AUTH.current() === null);
 	ok('پس از حذف، برنامه راه‌اندازی‌نشده است', AUTH.state().initialized === false);
+
+	// ---- مهاجرت پایگاه قدیمی: کارتخوان‌هایی که حساب دفتری جدا داشتند
+	const migBank = CAT.saveTreasury({ kind: 'bank', name: 'بانک مهاجرت' }).id;
+	const legacyAccount = d
+		.prepare(
+			`INSERT INTO accounts(name,group_key,subgroup,nature,is_system,sort)
+			 VALUES('کارتخوان قدیمی','terminal','terminal','debit',0,30)`
+		)
+		.run().lastInsertRowid;
+	const legacyTerm = d
+		.prepare(
+			"INSERT INTO treasuries(kind,name,account_id,is_active) VALUES('terminal','کارتخوان قدیمی',?,1)"
+		)
+		.run(legacyAccount).lastInsertRowid;
+	const cashAccountId = d.prepare("SELECT account_id FROM treasuries WHERE kind='cash'").get().account_id;
+	const legacyEntry = d
+		.prepare(
+			"INSERT INTO journal_entries(number,entry_date,description) VALUES('JE-LEGACY',?,'مانده قدیمی کارتخوان')"
+		)
+		.run(DOC.today()).lastInsertRowid;
+	const legacyLine = d.prepare(
+		'INSERT INTO journal_lines(entry_id,account_id,debit,credit) VALUES(?,?,?,?)'
+	);
+	legacyLine.run(legacyEntry, legacyAccount, 50000, 0);
+	legacyLine.run(legacyEntry, cashAccountId, 0, 50000);
+
+	db.migrateTerminalTreasuries(d);
+	const migrated = d.prepare('SELECT * FROM treasuries WHERE id=?').get(legacyTerm);
+	const migBankAccount = d.prepare('SELECT account_id FROM treasuries WHERE id=?').get(migBank).account_id;
+	const migBankBalance = d
+		.prepare('SELECT COALESCE(SUM(debit-credit),0) v FROM journal_lines WHERE account_id=?')
+		.get(migBankAccount).v;
+	ok('مهاجرت: کارتخوان حساب دفتری خود را از دست می‌دهد', migrated.account_id === null);
+	ok('مهاجرت: کارتخوان به حساب بانکی متصل می‌شود', migrated.settle_treasury_id === migBank);
+	ok('مهاجرت: مانده کارتخوان به بانک منتقل می‌شود', migBankBalance === 50000, String(migBankBalance));
+	ok(
+		'مهاجرت: حساب قدیمی کارتخوان غیرفعال می‌شود',
+		d.prepare('SELECT is_active FROM accounts WHERE id=?').get(legacyAccount).is_active === 0
+	);
+	ok('مهاجرت: دفتر تراز می‌ماند', balanced());
 
 	console.log('\n' + log.join('\n'));
 	console.log(`\n${log.filter((l) => l.startsWith('PASS')).length}/${log.length} تست موفق`);

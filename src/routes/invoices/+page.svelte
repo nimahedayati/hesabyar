@@ -46,6 +46,8 @@
 			(account) => account.subgroup === 'other'
 		)
 	);
+	// کارتخوان حساب مستقل ندارد؛ دریافت/پرداخت مستقیم روی صندوق و بانک ثبت می‌شود
+	const payTreasuries = $derived((session.treasuries || []).filter((t) => t.kind !== 'terminal'));
 
 	const typesFor = (value) => (value === 'all' ? null : value === 'cash' ? CASH_TYPES : [value]);
 
@@ -108,7 +110,7 @@
 		voucherForm = {
 			date: todayISO(),
 			partyId: '',
-			treasuryId: session.treasuries[0]?.id || '',
+			treasuryId: payTreasuries[0]?.id || '',
 			amount: 0,
 			accountId: type === 'expense' ? expenseAccounts[0]?.id : incomeAccounts[0]?.id,
 			note: ''
@@ -425,7 +427,7 @@
 		<div class="col-span-2">
 			<label class="label" for="v-treasury">حساب خزانه</label>
 			<select id="v-treasury" class="input" bind:value={voucherForm.treasuryId}>
-				{#each session.treasuries as treasury (treasury.id)}
+				{#each payTreasuries as treasury (treasury.id)}
 					<option value={treasury.id}>{treasury.name}</option>
 				{/each}
 			</select>

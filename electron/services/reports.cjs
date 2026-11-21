@@ -53,7 +53,6 @@ function dashboard() {
 	const treas = treasuryBalances();
 	const cash = r2(treas.filter((x) => x.kind === 'cash').reduce((s, x) => s + x.bal, 0));
 	const bank = r2(treas.filter((x) => x.kind === 'bank').reduce((s, x) => s + x.bal, 0));
-	const terminal = r2(treas.filter((x) => x.kind === 'terminal').reduce((s, x) => s + x.bal, 0));
 
 	const parties = partyBalances();
 	const receivable = r2(parties.filter((p) => p.bal > 0).reduce((s, p) => s + p.bal, 0));
@@ -115,8 +114,8 @@ function dashboard() {
 		invoiceCount,
 		cash,
 		bank,
-		terminal,
-		liquidity: r2(cash + bank + terminal),
+		// کارتخوان حساب مستقل ندارد؛ مبالغش داخل بانک متصل است
+		liquidity: r2(cash + bank),
 		receivable,
 		payable,
 		lowStock,
@@ -190,7 +189,8 @@ function profitReport(from, to) {
 /** جریان نقدی — فقط حرکت واقعی پول در خزانه‌ها */
 function cashflow(from, to) {
 	const db = get();
-	const treas = treasuryBalances();
+	// کارتخوان حساب مستقل ندارد؛ فقط صندوق و بانک گردش نقدی دارند
+	const treas = treasuryBalances().filter((row) => row.kind !== 'terminal');
 	const rows = db
 		.prepare(
 			`SELECT t.kind, t.name, t.account_id,
@@ -199,7 +199,7 @@ function cashflow(from, to) {
 			 FROM treasuries t
 			 LEFT JOIN journal_lines jl ON jl.account_id = t.account_id
 			 LEFT JOIN journal_entries je ON je.id = jl.entry_id
-			 WHERE t.is_active=1 GROUP BY t.id ORDER BY t.sort`
+			 WHERE t.is_active=1 AND t.kind <> 'terminal' GROUP BY t.id ORDER BY t.sort`
 		)
 		.all(from, to, from);
 
@@ -210,7 +210,7 @@ function cashflow(from, to) {
 			        SUM(CASE WHEN jl.credit>0 THEN jl.credit ELSE 0 END) outflow
 			 FROM journal_lines jl JOIN journal_entries je ON je.id=jl.entry_id
 			 JOIN accounts a ON a.id=jl.account_id
-			 WHERE a.group_key IN ('cash','bank','terminal') AND je.entry_date BETWEEN ? AND ?
+			 WHERE a.group_key IN ('cash','bank') AND je.entry_date BETWEEN ? AND ?
 			 GROUP BY je.entry_date ORDER BY je.entry_date`
 		)
 		.all(from, to);

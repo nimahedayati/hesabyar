@@ -14,21 +14,27 @@ const PRODUCT_COLUMNS = `p.id, p.name, p.sku, p.unit, p.sale_price, p.purchase_p
 
 /* ------------------------------- گروه کالا ------------------------------- */
 
-const listCategories = () =>
-	get().prepare('SELECT * FROM product_categories ORDER BY sort, name').all();
+const listCategories = () => get().prepare('SELECT * FROM product_categories ORDER BY sort, name').all();
 
 function saveCategory(payload) {
 	const db = get();
 	const name = V.requireText(payload.name, 'نام گروه', 80);
 	if (payload.id) {
-		db.prepare('UPDATE product_categories SET name=? WHERE id=?').run(name, V.requireId(payload.id, 'گروه'));
+		db.prepare('UPDATE product_categories SET name=? WHERE id=?').run(
+			name,
+			V.requireId(payload.id, 'گروه')
+		);
 		return { id: payload.id };
 	}
-	return { id: db.prepare('INSERT INTO product_categories(name, sort) VALUES(?, 99)').run(name).lastInsertRowid };
+	return {
+		id: db.prepare('INSERT INTO product_categories(name, sort) VALUES(?, 99)').run(name).lastInsertRowid
+	};
 }
 
 function removeCategory({ id }) {
-	const used = get().prepare('SELECT COUNT(*) c FROM products WHERE category_id=? AND is_active=1').get(id).c;
+	const used = get()
+		.prepare('SELECT COUNT(*) c FROM products WHERE category_id=? AND is_active=1')
+		.get(id).c;
 	if (used > 0) fail('این گروه کالا در حال استفاده است', 'IN_USE');
 	get().prepare('DELETE FROM product_categories WHERE id=?').run(id);
 	return { ok: true };
@@ -74,7 +80,9 @@ function listProducts(params = {}) {
 function searchProducts({ q = '', categoryId = null, limit = SEARCH_LIMIT }) {
 	const { clause, args } = productQuery({ q, categoryId });
 	return get()
-		.prepare(`SELECT ${PRODUCT_COLUMNS} FROM products p ${clause} ORDER BY p.is_favorite DESC, p.name LIMIT ?`)
+		.prepare(
+			`SELECT ${PRODUCT_COLUMNS} FROM products p ${clause} ORDER BY p.is_favorite DESC, p.name LIMIT ?`
+		)
 		.all(...args, Math.min(Number(limit) || SEARCH_LIMIT, 50));
 }
 
@@ -149,7 +157,9 @@ function removeProduct({ id }) {
 }
 
 function toggleFavorite({ id, value }) {
-	get().prepare('UPDATE products SET is_favorite = ? WHERE id = ?').run(value ? 1 : 0, V.requireId(id, 'کالا'));
+	get()
+		.prepare('UPDATE products SET is_favorite = ? WHERE id = ?')
+		.run(value ? 1 : 0, V.requireId(id, 'کالا'));
 	return { ok: true };
 }
 
@@ -242,8 +252,10 @@ function saveParty(payload) {
 			return { id };
 		}
 		const accountId = db
-			.prepare(`INSERT INTO accounts(name, group_key, subgroup, nature, is_system, sort)
-				VALUES(?, 'persons', 'persons', 'debit', 0, 200)`)
+			.prepare(
+				`INSERT INTO accounts(name, group_key, subgroup, nature, is_system, sort)
+				VALUES(?, 'persons', 'persons', 'debit', 0, 200)`
+			)
 			.run(data.name).lastInsertRowid;
 		const newId = db
 			.prepare(
@@ -289,7 +301,11 @@ function listAccounts() {
 	const groups = new Map();
 	for (const row of rows) {
 		if (!groups.has(row.group_key)) {
-			groups.set(row.group_key, { key: row.group_key, label: GROUP_LABELS[row.group_key] || row.group_key, accounts: [] });
+			groups.set(row.group_key, {
+				key: row.group_key,
+				label: GROUP_LABELS[row.group_key] || row.group_key,
+				accounts: []
+			});
 		}
 		groups.get(row.group_key).accounts.push({
 			...row,
@@ -321,8 +337,10 @@ function saveAccount(payload) {
 	}
 	return {
 		id: db
-			.prepare(`INSERT INTO accounts(code, name, group_key, subgroup, nature, is_system, sort)
-				VALUES(?, ?, ?, ?, ?, 0, 300)`)
+			.prepare(
+				`INSERT INTO accounts(code, name, group_key, subgroup, nature, is_system, sort)
+				VALUES(?, ?, ?, ?, ?, 0, 300)`
+			)
 			.run(data.code, data.name, data.group_key, data.group_key, data.nature).lastInsertRowid
 	};
 }
@@ -346,33 +364,64 @@ function listTreasuries({ includeInactive = false } = {}) {
 	return rows.map((row) => ({ ...row, balance: r2(row.balance) }));
 }
 
+/** حساب بانکی متصل به کارتخوان؛ اتصال اجباری است چون کارتخوان حساب ندارد */
+function linkedBank(db, settleTreasuryId) {
+	if (!settleTreasuryId) return null;
+	return (
+		db
+			.prepare("SELECT id, name FROM treasuries WHERE id = ? AND kind = 'bank' AND is_active = 1")
+			.get(settleTreasuryId) || null
+	);
+}
+
 function saveTreasury(payload) {
 	const db = get();
+	const kind = V.requireOneOf(payload.kind, TREASURY_KINDS, 'نوع حساب');
+	const isTerminal = kind === 'terminal';
+	const settleTreasuryId = V.optionalId(payload.settleTreasuryId);
 	const data = {
-		kind: V.requireOneOf(payload.kind, TREASURY_KINDS, 'نوع حساب'),
+		kind,
 		name: V.requireText(payload.name, 'نام حساب'),
 		bank_name: V.optionalText(payload.bankName, 60),
 		account_no: V.optionalText(payload.accountNo, 40),
 		terminal_no: V.optionalText(payload.terminalNo, 40),
 		fee_percent: V.requireNonNegative(payload.feePercent ?? 0, 'درصد کارمزد'),
-		settle_treasury_id: V.optionalId(payload.settleTreasuryId),
+		settle_treasury_id: null,
 		is_default: payload.isDefault ? 1 : 0
 	};
+
+	// کارتخوان موجودی مستقل ندارد؛ پس باید به یک حساب بانکی متصل باشد
+	if (isTerminal) {
+		const bank = linkedBank(db, settleTreasuryId);
+		if (!bank) fail('کارتخوان باید به یک حساب بانکی متصل باشد', 'VALIDATION');
+		data.settle_treasury_id = bank.id;
+	}
 
 	return db.transaction(() => {
 		const id = V.optionalId(payload.id);
 		if (id) {
+			const current = db.prepare('SELECT kind FROM treasuries WHERE id = ?').get(id);
+			if (!current) fail('حساب یافت نشد', 'NOT_FOUND');
+			// تغییر نوع، حساب دفتری را بی‌صاحب می‌کند؛ فقط از راه ساخت حساب جدید مجاز است
+			if (current.kind !== kind) fail('نوع حساب قابل تغییر نیست؛ حساب جدید بسازید', 'VALIDATION');
+
 			db.prepare(
-				`UPDATE treasuries SET kind=@kind, name=@name, bank_name=@bank_name, account_no=@account_no,
+				`UPDATE treasuries SET name=@name, bank_name=@bank_name, account_no=@account_no,
 				 terminal_no=@terminal_no, fee_percent=@fee_percent, settle_treasury_id=@settle_treasury_id,
 				 is_default=@is_default WHERE id=@id`
 			).run({ ...data, id });
 			return { id };
 		}
-		const accountId = db
-			.prepare(`INSERT INTO accounts(name, group_key, subgroup, nature, is_system, sort)
-				VALUES(?, ?, ?, 'debit', 0, 30)`)
-			.run(data.name, data.kind, data.kind).lastInsertRowid;
+
+		// کارتخوان حساب دفتری نمی‌گیرد: مبالغ آن روی حساب بانکی متصل ثبت می‌شود
+		const accountId = isTerminal
+			? null
+			: db
+					.prepare(
+						`INSERT INTO accounts(name, group_key, subgroup, nature, is_system, sort)
+						VALUES(?, ?, ?, 'debit', 0, 30)`
+					)
+					.run(data.name, kind, kind).lastInsertRowid;
 		const newId = db
 			.prepare(
 				`INSERT INTO treasuries(kind, name, bank_name, account_no, terminal_no, fee_percent,
@@ -386,18 +435,22 @@ function saveTreasury(payload) {
 }
 
 function removeTreasury({ id }) {
-	const treasury = get().prepare('SELECT account_id FROM treasuries WHERE id = ?').get(V.requireId(id, 'حساب'));
+	const treasury = get()
+		.prepare('SELECT account_id, kind FROM treasuries WHERE id = ?')
+		.get(V.requireId(id, 'حساب'));
 	if (!treasury) fail('حساب یافت نشد', 'NOT_FOUND');
-	const used = get()
-		.prepare('SELECT COUNT(*) c FROM journal_lines WHERE account_id = ?')
-		.get(treasury.account_id).c;
-	if (used > 0) fail('این حساب گردش مالی دارد و قابل حذف نیست', 'IN_USE');
+	// کارتخوان حساب دفتری ندارد؛ پس گردشی هم ندارد که مانع حذف شود
+	if (treasury.account_id) {
+		const used = get()
+			.prepare('SELECT COUNT(*) c FROM journal_lines WHERE account_id = ?')
+			.get(treasury.account_id).c;
+		if (used > 0) fail('این حساب گردش مالی دارد و قابل حذف نیست', 'IN_USE');
+	}
 	get().prepare('UPDATE treasuries SET is_active = 0 WHERE id = ?').run(id);
 	return { ok: true };
 }
 
-const listWarehouses = () =>
-	get().prepare('SELECT * FROM warehouses ORDER BY is_default DESC, name').all();
+const listWarehouses = () => get().prepare('SELECT * FROM warehouses ORDER BY is_default DESC, name').all();
 
 function saveWarehouse(payload) {
 	const db = get();
@@ -431,7 +484,8 @@ const ALLOWED_SETTINGS = new Set([
 function saveSettings(payload) {
 	const db = get();
 	const entries = Object.entries(payload || {}).filter(([key]) => ALLOWED_SETTINGS.has(key));
-	if (payload.stock_policy) V.requireOneOf(payload.stock_policy, ['block', 'warn', 'allow'], 'سیاست موجودی');
+	if (payload.stock_policy)
+		V.requireOneOf(payload.stock_policy, ['block', 'warn', 'allow'], 'سیاست موجودی');
 	const upsert = db.prepare(
 		'INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
 	);

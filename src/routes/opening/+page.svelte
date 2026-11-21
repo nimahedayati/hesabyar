@@ -30,7 +30,8 @@
 	let saving = $state(false);
 
 	const currency = $derived(session.settings?.currency || 'تومان');
-	const treasuries = $derived(session.treasuries || []);
+	// کارتخوان حساب مستقل ندارد؛ موجودی اولیه فقط روی صندوق و بانک ثبت می‌شود
+	const treasuries = $derived((session.treasuries || []).filter((t) => t.kind !== 'terminal'));
 	const inventoryValue = $derived(
 		items.reduce((sum, item) => sum + (Number(item.qty) || 0) * (Number(item.unitCost) || 0), 0)
 	);

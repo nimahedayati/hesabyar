@@ -76,7 +76,11 @@
 				{#if methodMeta(row.method).treasuryKind}
 					<select class="input !h-9 flex-1 !text-[11.5px]" bind:value={row.treasuryId}>
 						{#each treasuriesFor(row.method, treasuries) as treasury (treasury.id)}
-							<option value={treasury.id}>{treasury.name}</option>
+							<option value={treasury.id}>
+								{treasury.name}{treasury.kind === 'terminal' && treasury.settle_name
+									? ` (واریز به ${treasury.settle_name})`
+									: ''}
+							</option>
 						{/each}
 					</select>
 				{:else}

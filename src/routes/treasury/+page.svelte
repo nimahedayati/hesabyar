@@ -22,7 +22,9 @@
 
 	const cur = $derived(session.settings?.currency || 'تومان');
 	const treasuries = $derived(session.treasuries || []);
-	const total = $derived(treasuries.reduce((s, t) => s + t.balance, 0));
+	// کارتخوان موجودی مستقل ندارد؛ موجودی‌اش داخل حساب بانکی متصل است
+	const ownTreasuries = $derived(treasuries.filter((t) => t.kind !== 'terminal'));
+	const total = $derived(ownTreasuries.reduce((s, t) => s + t.balance, 0));
 	const KIND_LABEL = { cash: 'صندوق', bank: 'بانک', terminal: 'کارتخوان' };
 
 	async function load() {
@@ -32,7 +34,13 @@
 	onMount(load);
 
 	function openTransfer() {
-		form = { fromTreasuryId: treasuries[0]?.id, toTreasuryId: treasuries[1]?.id, amount: 0, date: todayISO(), note: '' };
+		form = {
+			fromTreasuryId: ownTreasuries[0]?.id,
+			toTreasuryId: ownTreasuries[1]?.id ?? '',
+			amount: 0,
+			date: todayISO(),
+			note: ''
+		};
 		transferOpen = true;
 	}
 
@@ -48,7 +56,15 @@
 	}
 
 	function openCheck() {
-		cform = { direction: 'received', partyId: '', serial: '', amount: 0, dueDate: todayISO(), bankName: '', note: '' };
+		cform = {
+			direction: 'received',
+			partyId: '',
+			serial: '',
+			amount: 0,
+			dueDate: todayISO(),
+			bankName: '',
+			note: ''
+		};
 		checkOpen = true;
 	}
 
@@ -91,25 +107,42 @@
 			<div class="card card-pad">
 				<div class="flex items-center justify-between">
 					<span class="flex items-center gap-2 text-[12px] text-muted">
-						<Icon name={t.kind === 'cash' ? 'wallet' : t.kind === 'bank' ? 'bank' : 'creditCard'} size={14} />
+						<Icon
+							name={t.kind === 'cash' ? 'wallet' : t.kind === 'bank' ? 'bank' : 'creditCard'}
+							size={14}
+						/>
 						{KIND_LABEL[t.kind]}
 					</span>
 					<span class="tag tag-neutral">{t.bank_name || faDigits(t.terminal_no) || '—'}</span>
 				</div>
 				<div class="mt-2 truncate text-[13px] font-medium text-ink">{t.name}</div>
-				<div class="num mt-1 text-[20px] text-ink">{fmt(t.balance)}</div>
+				{#if t.kind === 'terminal'}
+					<div class="mt-1 text-[11.5px] text-muted">
+						واریز به حساب {t.settle_name || 'بانک متصل'}
+					</div>
+				{:else}
+					<div class="num mt-1 text-[20px] text-ink">{fmt(t.balance)}</div>
+				{/if}
 			</div>
 		{/each}
 	</div>
 
 	<div class="mb-3 flex items-center justify-between">
 		<div class="flex gap-1">
-			<button class="chip {tab === 'accounts' ? 'active' : ''}" onclick={() => (tab = 'accounts')}>گردش حساب‌ها</button>
-			<button class="chip {tab === 'checks' ? 'active' : ''}" onclick={() => (tab = 'checks')}>چک‌ها</button>
+			<button class="chip {tab === 'accounts' ? 'active' : ''}" onclick={() => (tab = 'accounts')}>
+				گردش حساب‌ها
+			</button>
+			<button class="chip {tab === 'checks' ? 'active' : ''}" onclick={() => (tab = 'checks')}>
+				چک‌ها
+			</button>
 		</div>
 		<div class="flex gap-1.5">
-			<button class="btn btn-soft btn-sm" onclick={openTransfer}><Icon name="arrows" size={13} /> انتقال وجه</button>
-			<button class="btn btn-primary btn-sm" onclick={openCheck}><Icon name="plus" size={13} /> ثبت چک</button>
+			<button class="btn btn-soft btn-sm" onclick={openTransfer}>
+				<Icon name="arrows" size={13} /> انتقال وجه
+			</button>
+			<button class="btn btn-primary btn-sm" onclick={openCheck}>
+				<Icon name="plus" size={13} /> ثبت چک
+			</button>
 		</div>
 	</div>
 
@@ -133,8 +166,18 @@
 						<tr>
 							<td class="font-medium text-ink">{t.name}</td>
 							<td><span class="tag tag-neutral">{KIND_LABEL[t.kind]}</span></td>
-							<td class="mono-num text-[11.5px] text-muted">{faDigits(t.account_no || t.terminal_no) || '—'}</td>
-							<td class="!text-left num text-ink">{fmt(t.balance)}</td>
+							<td class="mono-num text-[11.5px] text-muted">
+								{faDigits(t.account_no || t.terminal_no) || '—'}
+							</td>
+							<td class="!text-left num text-ink">
+								{#if t.kind === 'terminal'}
+									<span class="text-[11.5px] text-muted">
+										در حساب {t.settle_name || 'بانک متصل'}
+									</span>
+								{:else}
+									{fmt(t.balance)}
+								{/if}
+							</td>
 						</tr>
 					{/each}
 				</tbody>
@@ -166,33 +209,47 @@
 							<td class="mono-num text-[12px]">{c.serial || '—'}</td>
 							<td class="whitespace-nowrap text-[12px]">{faDate(c.due_date)}</td>
 							<td class="!text-left num text-ink">{fmt(c.amount)}</td>
-							<td><span class="tag {CHECK_STATUS[c.status]?.cls}">{CHECK_STATUS[c.status]?.label}</span></td>
+							<td>
+								<span class="tag {CHECK_STATUS[c.status]?.cls}">
+									{CHECK_STATUS[c.status]?.label}
+								</span>
+							</td>
 							<td class="!text-left">
 								{#if ['in_hand', 'endorsed'].includes(c.status)}
-									<button class="btn btn-soft btn-sm" onclick={() => openSettle(c)}>تغییر وضعیت</button>
+									<button class="btn btn-soft btn-sm" onclick={() => openSettle(c)}>
+										تغییر وضعیت
+									</button>
 								{/if}
 							</td>
 						</tr>
 					{/each}
 				</tbody>
 			</table>
-			{#if !checks.length}<p class="py-10 text-center text-[12.5px] text-muted2">چکی ثبت نشده است</p>{/if}
+			{#if !checks.length}<p class="py-10 text-center text-[12.5px] text-muted2">
+					چکی ثبت نشده است
+				</p>{/if}
 		</div>
 	{/if}
 </div>
 
-<Modal open={transferOpen} title="انتقال وجه بین حساب‌ها" subtitle="انتقال، درآمد یا هزینه محسوب نمی‌شود" onclose={() => (transferOpen = false)} size="sm">
+<Modal
+	open={transferOpen}
+	title="انتقال وجه بین حساب‌ها"
+	subtitle="انتقال، درآمد یا هزینه محسوب نمی‌شود"
+	onclose={() => (transferOpen = false)}
+	size="sm"
+>
 	<div class="space-y-3">
 		<div>
 			<label class="label" for="t-from">از حساب</label>
 			<select id="t-from" class="input" bind:value={form.fromTreasuryId}>
-				{#each treasuries as t (t.id)}<option value={t.id}>{t.name}</option>{/each}
+				{#each ownTreasuries as t (t.id)}<option value={t.id}>{t.name}</option>{/each}
 			</select>
 		</div>
 		<div>
 			<label class="label" for="t-to">به حساب</label>
 			<select id="t-to" class="input" bind:value={form.toTreasuryId}>
-				{#each treasuries as t (t.id)}<option value={t.id}>{t.name}</option>{/each}
+				{#each ownTreasuries as t (t.id)}<option value={t.id}>{t.name}</option>{/each}
 			</select>
 		</div>
 		<div>
@@ -249,8 +306,14 @@
 <Modal open={settleOpen} title="تغییر وضعیت چک" onclose={() => (settleOpen = false)} size="sm">
 	<div class="space-y-3">
 		<div class="rounded-lg bg-paper px-3 py-2 text-[12px]">
-			<div class="flex justify-between"><span class="text-muted">طرف حساب</span><span class="text-ink">{active?.party_name}</span></div>
-			<div class="mt-1 flex justify-between"><span class="text-muted">مبلغ</span><span class="num text-ink">{fmt(active?.amount || 0)}</span></div>
+			<div class="flex justify-between">
+				<span class="text-muted">طرف حساب</span><span class="text-ink">{active?.party_name}</span>
+			</div>
+			<div class="mt-1 flex justify-between">
+				<span class="text-muted">مبلغ</span><span class="num text-ink">
+					{fmt(active?.amount || 0)}
+				</span>
+			</div>
 		</div>
 		{#if active?.direction === 'received'}
 			<div>
@@ -265,7 +328,9 @@
 				<div>
 					<label class="label" for="s-tr">حساب بانکی</label>
 					<select id="s-tr" class="input" bind:value={sform.treasuryId}>
-						{#each treasuries.filter((t) => t.kind !== 'cash') as t (t.id)}<option value={t.id}>{t.name}</option>{/each}
+						{#each treasuries.filter((t) => t.kind === 'bank') as t (t.id)}<option value={t.id}>
+								{t.name}
+							</option>{/each}
 					</select>
 				</div>
 			{:else if sform.action === 'endorsed'}
@@ -286,7 +351,9 @@
 				<div>
 					<label class="label" for="s-tr">حساب بانکی</label>
 					<select id="s-tr" class="input" bind:value={sform.treasuryId}>
-						{#each treasuries.filter((t) => t.kind !== 'cash') as t (t.id)}<option value={t.id}>{t.name}</option>{/each}
+						{#each treasuries.filter((t) => t.kind === 'bank') as t (t.id)}<option value={t.id}>
+								{t.name}
+							</option>{/each}
 					</select>
 				</div>
 			{/if}

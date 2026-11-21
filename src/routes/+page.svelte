@@ -170,7 +170,7 @@
 				<div class="text-[11px] text-white/45">{cur} · به‌روزرسانی لحظه‌ای</div>
 
 				<div class="mt-5 space-y-2.5">
-					{#each loading ? [] : [['صندوق', d.cash, 'wallet'], ['بانک', d.bank, 'bank'], ['کارتخوان', d.terminal, 'creditCard']] as [label, val, ic]}
+					{#each loading ? [] : [['صندوق', d.cash, 'wallet'], ['بانک و کارتخوان', d.bank, 'bank']] as [label, val, ic]}
 						<div class="flex items-center justify-between rounded-lg bg-white/[0.045] px-3 py-2">
 							<span class="flex items-center gap-2 text-[12px] text-white/65">
 								<Icon name={ic} size={13} />

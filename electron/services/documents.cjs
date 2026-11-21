@@ -38,11 +38,38 @@ function sys(code) {
 	return a.id;
 }
 
+function treasuryRow(tid) {
+	const row = get()
+		.prepare('SELECT id, kind, name, account_id, settle_treasury_id FROM treasuries WHERE id=?')
+		.get(tid);
+	if (!row) throw new Error('حساب خزانه یافت نشد');
+	return row;
+}
+
+/**
+ * حساب دفتری خزانه. کارتخوان حساب مستقل ندارد؛ هر مبلغی که با کارتخوان
+ * دریافت شود به حساب بانکی متصل به آن واریز می‌شود.
+ */
 function treasuryAccount(tid) {
 	if (!tid) return sys('1010');
-	const t = get().prepare('SELECT account_id, name FROM treasuries WHERE id=?').get(tid);
-	if (!t) throw new Error('حساب خزانه یافت نشد');
+	const t = treasuryRow(tid);
+	if (t.kind === 'terminal') {
+		const bank = get()
+			.prepare("SELECT account_id FROM treasuries WHERE id=? AND kind='bank'")
+			.get(t.settle_treasury_id);
+		if (!bank?.account_id) throw new Error('کارتخوان به حساب بانکی متصل نیست');
+		return bank.account_id;
+	}
+	if (!t.account_id) throw new Error('حساب خزانه یافت نشد');
 	return t.account_id;
+}
+
+/** کارتخوان موجودی مستقل ندارد؛ انتقال و موجودی اولیه روی آن معنا ندارد */
+function assertHasOwnBalance(tid, action) {
+	const t = treasuryRow(tid);
+	if (t.kind === 'terminal')
+		throw new Error(`کارتخوان موجودی مستقل ندارد؛ ${action} را روی حساب بانکی متصل انجام دهید`);
+	return t;
 }
 
 function partyAccount(pid) {
@@ -739,6 +766,8 @@ function createTransfer(p) {
 	if (!(amount > 0)) throw new Error('مبلغ انتقال باید بزرگ‌تر از صفر باشد');
 	if (!p.fromTreasuryId || !p.toTreasuryId) throw new Error('حساب مبدأ و مقصد را انتخاب کنید');
 	if (p.fromTreasuryId === p.toTreasuryId) throw new Error('حساب مبدأ و مقصد نباید یکی باشند');
+	assertHasOwnBalance(p.fromTreasuryId, 'انتقال');
+	assertHasOwnBalance(p.toTreasuryId, 'انتقال');
 
 	const tx = db.transaction(() => {
 		const docId = insertDoc({
@@ -919,6 +948,8 @@ function createOpening(p) {
 		if (invValue > 0) jl.push({ accountId: sys('1300'), debit: invValue, credit: 0, description: 'موجودی اولیه کالا' });
 
 		for (const c of cashLines) {
+			// کارتخوان حساب ندارد؛ موجودی اولیه‌اش روی حساب بانکی متصل ثبت می‌شود
+			assertHasOwnBalance(c.treasuryId, 'ثبت موجودی اولیه');
 			jl.push({ accountId: treasuryAccount(c.treasuryId), debit: r2(c.amount), credit: 0, description: 'موجودی اولیه خزانه' });
 		}
 		for (const pt of partyLines) {

@@ -109,7 +109,9 @@ CREATE TABLE IF NOT EXISTS treasuries (
   account_no  TEXT,
   terminal_no TEXT,
   fee_percent REAL NOT NULL DEFAULT 0,
+  -- کارتخوان: حساب بانکی متصلی که مبالغ آن به آن واریز می‌شود
   settle_treasury_id INTEGER REFERENCES treasuries(id),
+  -- کارتخوان حساب مستقل ندارد (NULL)؛ موجودی‌اش همان حساب بانکی متصل است
   account_id  INTEGER REFERENCES accounts(id),
   is_default  INTEGER NOT NULL DEFAULT 0,
   is_active   INTEGER NOT NULL DEFAULT 1,
