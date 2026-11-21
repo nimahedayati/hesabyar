@@ -1,0 +1,58 @@
+name: Release
+
+on:
+    push:
+        tags:
+            - 'v*'
+    workflow_dispatch:
+
+permissions:
+    contents: write
+
+jobs:
+    build-windows:
+        name: ساخت نسخه نصبی ویندوز
+        runs-on: windows-latest
+
+        steps:
+            - name: دریافت کد
+              uses: actions/checkout@v4
+
+            - name: نصب Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+                  cache: npm
+
+            - name: نصب وابستگی‌ها
+              run: npm ci
+
+            - name: بررسی کد
+              run: npm run lint
+
+            - name: تست‌های واحد
+              run: npm run test:unit
+
+            - name: ساخت رابط کاربری
+              run: npm run build
+
+            - name: تست هسته حسابداری
+              run: npx electron scripts/test-core.cjs
+
+            - name: ساخت فایل نصبی
+              run: npx electron-builder --win --x64 --publish never
+
+            - name: بارگذاری فایل نصبی
+              uses: actions/upload-artifact@v4
+              with:
+                  name: hesabyar-windows
+                  path: dist/*.exe
+                  if-no-files-found: error
+
+            - name: انتشار در Releases
+              if: startsWith(github.ref, 'refs/tags/v')
+              uses: softprops/action-gh-release@v2
+              with:
+                  files: dist/*.exe
+                  generate_release_notes: true
+                  draft: false

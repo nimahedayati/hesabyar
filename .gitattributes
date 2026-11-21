@@ -1,0 +1,8 @@
+# نرمال‌سازی پایان خطوط
+* text=auto eol=lf
+
+# فایل‌های دودویی
+*.png binary
+*.ico binary
+*.woff2 binary
+*.exe binary

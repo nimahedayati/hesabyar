@@ -1,0 +1,19 @@
+# وابستگی‌ها
+node_modules/
+
+# خروجی ساخت
+build/
+.svelte-kit/
+dist/
+*.tsbuildinfo
+
+# فایل‌های موقت و لاگ
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# پایگاه داده محلی (هیچ‌وقت کامیت نمی‌شود)
+*.db
+*.db-wal
+*.db-shm

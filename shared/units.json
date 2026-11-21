@@ -1,0 +1,11 @@
+[
+	{ "key": "عدد", "fractional": false },
+	{ "key": "جفت", "fractional": false },
+	{ "key": "بسته", "fractional": false },
+	{ "key": "کارتن", "fractional": false },
+	{ "key": "کیسه", "fractional": false },
+	{ "key": "کیلوگرم", "fractional": true },
+	{ "key": "گرم", "fractional": true },
+	{ "key": "لیتر", "fractional": true },
+	{ "key": "متر", "fractional": true }
+]
