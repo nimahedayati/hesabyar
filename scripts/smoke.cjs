@@ -98,6 +98,8 @@ async function logout(win) {
 app.whenReady()
 	.then(async () => {
 		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hesab-smoke-'));
+		// پروفایل موقت: قفل شدن کش Electron بین اجراها نتیجه تست را خراب می‌کند
+		app.setPath('userData', path.join(dir, 'profile'));
 		db.init(path.join(dir, 'ui.db'));
 		backupTarget = path.join(dir, 'ui-backup.db');
 
@@ -406,6 +408,72 @@ app.whenReady()
 		ok('تب کاربران در تنظیمات وجود دارد', usersTab === 'ok', usersTab);
 		await sleep(700);
 		ok('پنل مدیریت کاربران رندر می‌شود', (await text(win)).includes('کاربران برنامه'));
+
+		// ---- ساخت گروه کالا و حساب از رابط کاربری (رگرسیون: خطای clone شدن Proxy)
+		const openTab = async (label) => {
+			const result = await win.webContents.executeJavaScript(`
+			(() => {
+				const tab = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '${label}');
+				if (!tab) return 'no-tab';
+				tab.click();
+				return 'ok';
+			})()
+		`);
+			await sleep(600);
+			return result;
+		};
+
+		const clickButton = (label) =>
+			win.webContents.executeJavaScript(`
+			(() => {
+				const btn = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '${label}' && !b.disabled);
+				if (!btn) return 'no-button';
+				btn.click();
+				return 'ok';
+			})()
+		`);
+
+		const fill = (selector, value) =>
+			win.webContents.executeJavaScript(`
+			(() => {
+				const el = document.querySelector('${selector}');
+				if (!el) return 'no-input';
+				el.value = ${JSON.stringify(value)};
+				el.dispatchEvent(new Event('input', { bubbles: true }));
+				return 'ok';
+			})()
+		`);
+
+		const categoriesBefore = countOf('product_categories');
+		ok('تب گروه کالا باز می‌شود', (await openTab('گروه کالا')) === 'ok');
+		const addStep = await clickButton('گروه جدید');
+		await sleep(400);
+		const nameStep = await fill('#nl-name', 'گروه آزمایشی');
+		await sleep(200);
+		const saveStep = await clickButton('ذخیره');
+		await sleep(900);
+		ok(
+			'گروه کالا از رابط کاربری ساخته می‌شود',
+			countOf('product_categories') === categoriesBefore + 1,
+			`${categoriesBefore} → ${countOf('product_categories')} · ${addStep}/${nameStep}/${saveStep}`
+		);
+		ok('گروه جدید در فهرست دیده می‌شود', (await text(win)).includes('گروه آزمایشی'));
+
+		const accountsBefore = countOf('accounts');
+		ok('تب حساب‌ها باز می‌شود', (await openTab('حساب‌ها')) === 'ok');
+		await clickButton('حساب جدید');
+		await sleep(400);
+		await fill('#ac-name', 'هزینه آزمایشی');
+		await fill('#ac-code', '۶۸۹۹');
+		await sleep(200);
+		await clickButton('ذخیره');
+		await sleep(900);
+		ok(
+			'حساب جدید از رابط کاربری ساخته می‌شود',
+			countOf('accounts') === accountsBefore + 1,
+			`${accountsBefore} → ${countOf('accounts')}`
+		);
+		ok('حساب جدید در ساختار حساب‌ها دیده می‌شود', (await text(win)).includes('هزینه آزمایشی'));
 
 		const created = await win.webContents.executeJavaScript(`
 		window.hesab.call('users.create', { name: 'زهرا', role: 'cashier', password: '4321' })
